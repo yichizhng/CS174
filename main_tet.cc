@@ -45,13 +45,16 @@ void redraw() {
   ui->ApplyViewingTransformation();
 
   /*
+  glDisable( GL_TEXTURE_1D );
   glBegin(GL_POINTS);
   for (int i = 0; i < nverts; ++i) {
-    glColor3f(1.0f - 10*dists[i], 1.0f - 10*dists[i], 1.0f - 10*dists[i]);
+    glColor3f(1.0f - 7*dists[i], 1.0f - 5*dists[i], 1.0f - 2*dists[i]);
     glVertex3f(pos[3*i], pos[3*i+1], pos[3*i+2]);
   }
   glEnd();
-  */
+
+  glEnable( GL_TEXTURE_1D ); */
+  
   
   glBegin(GL_TRIANGLES);
   double m = 100;

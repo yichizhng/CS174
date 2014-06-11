@@ -164,7 +164,7 @@ void step0() {
 
     // Update the volume of each vertex (needed for *_3)
     for (int j = 0; j < 4; ++j) {
-      vert_areas[j] += t->volume;
+      vert_areas[t->verts[j]] += t->volume;
     }
   }
 
