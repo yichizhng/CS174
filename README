@@ -1,0 +1,10 @@
+geodist calculates and displays geodesic distances on triangle meshes.
+As written right now it uses some faked transparency when drawing.
+Press r to pick a different point to find distance from, b to choose
+the boundary of the mesh, and q or ESC to exit.
+
+geodist_tet calculates and displays geodesic distances on tetrahedral
+meshes. Press r to pick a different point to find distance from, q or
+ESC to exit.
+
+square_gen and cube_gen generate triangle and tetrahedral meshes.
