@@ -26,6 +26,6 @@ cube_gen: cube_gen.c
 	gcc cube_gen.c -o cube_gen
 
 clean:
-	rm -f *.o $(PROG) square_gen cube_gen *~
+	rm -f *.o $(PROG) $(TETPROG) square_gen cube_gen *~
 
 .PHONY: clean all
