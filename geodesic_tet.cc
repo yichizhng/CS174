@@ -29,9 +29,9 @@ extern double *pos;
 #define SMALL_FLOAT 1000000*DBL_EPSILON
 
 static cholmod_common *workspace;
-cholmod_sparse *mat1, *mat2, *mat3;
+cholmod_sparse *mat1, *mat2;
 
-cholmod_factor *L1, *L2, *L3;
+cholmod_factor *L1, *L2;
 
 static inline double len(double x, double y, double z) {
   return sqrt( (x*x) + (y*y) + (z*z) );
@@ -72,7 +72,7 @@ double *vert_areas;
 void init() {
   // Set up things needed for calculations in this file; assumes all extern
   // variables have already been set, except nedges; we also calculate
-  // the edge set here
+  // the edge set here as well as the timestep t
   vert_areas = (double *) calloc(nverts, sizeof(double));
   int e = 0;
   for (int i = 0; i < ntets; ++i) {
@@ -231,5 +231,11 @@ void step0() {
     ((double *)trip1->x)[i] *= t;
     ((double *)trip1->x)[i] += vert_areas[i]/4;
   }
-  
+  for (int i = nverts; i < nverts + 6 * ntets; ++i) {
+    ((double *)trip1->x)[i] *= t;
+  }
+
+  mat1 = cholmod_triplet_to_sparse(trip1, 0, workspace);
+
+  L1 = cholmod_analyze(mat1, workspace);
 }
