@@ -7,12 +7,16 @@ SRCS = main.cc ArcBall.cc uistate.cc Vector3.cc geodesic.cc
 OBJS = $(SRCS:.cc=.o)
 PROG = geodist
 
-all: $(PROG) square_gen
+TETSRCS = main_tet.cc geodesic_tet.cc ArcBall.cc uistate.cc Vector3.cc
+TETOBJS = $(TETSRCS:.cc=.o)
+TETPROG = geodist_tet
+
+all: $(PROG) $(TETPROG) square_gen
 
 $(PROG): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
-geodist_tet: main_tet.cc geodesic_tet.cc ArcBall.cc uistate.cc Vector3.cc
+$(TETPROG): $(TETOBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 square_gen: square_gen.c
