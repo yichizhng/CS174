@@ -19,6 +19,8 @@
 #include <vector>
 #include <cstring>
 
+#include <iostream>
+
 // Data structures:
 
 // Constants (well, per mesh)
@@ -139,14 +141,15 @@ void step0() {
     x2 = pos[3 * t->verts[1]+1] - pos[3 * t->verts[0]+1];
     x3 = pos[3 * t->verts[1]+2] - pos[3 * t->verts[0]+2];
     y1 = pos[3 * t->verts[2]] - pos[3 * t->verts[0]];
-    y2 = pos[3 * t->verts[2]] - pos[3 * t->verts[0]];
-    y3 = pos[3 * t->verts[2]] - pos[3 * t->verts[0]];
+    y2 = pos[3 * t->verts[2]+1] - pos[3 * t->verts[0]+1];
+    y3 = pos[3 * t->verts[2]+2] - pos[3 * t->verts[0]+2];
     z1 = pos[3 * t->verts[3]] - pos[3 * t->verts[0]];
-    z2 = pos[3 * t->verts[3]] - pos[3 * t->verts[0]];
-    z3 = pos[3 * t->verts[3]] - pos[3 * t->verts[0]];
+    z2 = pos[3 * t->verts[3]+1] - pos[3 * t->verts[0]+1];
+    z3 = pos[3 * t->verts[3]+2] - pos[3 * t->verts[0]+2];
 
     t->volume = ( (x1 * y2 * z3 + x2 * y3 * z1 + x3 * y1 * z2) -
                      (x1 * y3 * z2 + x2 * y1 * z3 + x3 * y2 * z1) ) / 6;
+    cerr << t->volume << endl;
     if (t->volume < 0)
       t->volume = -t->volume;
 
@@ -166,6 +169,11 @@ void step0() {
       vert_areas[j] += t->volume;
     }
   }
+
+  for (int i = 0; i < nedges; ++i) {
+    cerr << edge_areas[i] << endl;
+  }
+  cerr << endl;
 
   // (i != j)
   // L_(i,j) = (sum over tetrahedra t incident on both i and j)
@@ -209,10 +217,9 @@ void step0() {
         // kind of need that
         double dx, dy, dz;
         dx = pos[3*v2] - pos[3*v1];
-        dy = pos[3*v2+1] - pos[3*v2+1];
-        dz = pos[3*v2+2] - pos[3*v2+2];
+        dy = pos[3*v2+1] - pos[3*v1+1];
+        dz = pos[3*v2+2] - pos[3*v1+2];
         double e_len = len(dx, dy, dz);
-        
         // Update diagonal entries
         ((double *)trip1->x)[v1] += (0.75 * edge_areas[e] / (e_len * e_len));
         ((double *)trip1->x)[v2] += (0.75 * edge_areas[e] / (e_len * e_len));
@@ -240,18 +247,23 @@ void step0() {
   L2 = cholmod_analyze(mat2, workspace);
   cholmod_factorize(mat2, L2, workspace);
   
+  cerr << endl;
   // Modify trip1 to generate A - tL
   for (int i = 0; i < nverts; ++i) {
+    cerr << ((double *)trip1->x)[i] << endl;
     ((double *)trip1->x)[i] *= timestep;
     ((double *)trip1->x)[i] += vert_areas[i]/4;
   }
   for (int i = nverts; i < nverts + 6 * ntets; ++i) {
+    cerr << ((double *)trip1->x)[i] << endl;
     ((double *)trip1->x)[i] *= timestep;
   }
 
   mat1 = cholmod_triplet_to_sparse(trip1, 0, workspace);
 
   L1 = cholmod_analyze(mat1, workspace);
+  cholmod_print_factor(L1, "fac1", workspace);
+  cholmod_print_factor(L2, "fac2", workspace);
 }
 
 vector<int> vertset;
@@ -276,7 +288,8 @@ void step1(double *dists) {
 
   // Obviously we need to calculate the gradient and divergence here.
   // Of course they are more or less analogous to the 2-D ones (see
-  // Keenan Crane's SIGGRAPH 2013 talk)
+  // Keenan Crane's SIGGRAPH 2013 talk) except we don't get the nice
+  // cotan form for the Hodge star
 
   if (vec2) {
     cholmod_free_dense(&vec2, workspace);
