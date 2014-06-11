@@ -57,7 +57,7 @@ void redraw() {
   
   
   glBegin(GL_TRIANGLES);
-  double m = 100;
+  double m = 10;
   for (int i = 0; i < ntets; ++i) {
     glTexCoord1f(m*dists[tets[i]->verts[0]]);
     glVertex3f(pos[3*tets[i]->verts[0]],
@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
   stripeImage[1] = 255;
   stripeImage[2] = 255;
   for (int j = 1; j < stripeImageWidth; j++) {
-    stripeImage[3*j] = 0; // use a gradient instead of a line
+    stripeImage[3*j] = 0;
     stripeImage[3*j+1] = 155;
     stripeImage[3*j+2] = 0;
   }

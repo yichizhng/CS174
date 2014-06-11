@@ -112,7 +112,7 @@ void init() {
     edge_total += len(dx, dy, dz);
   }
   timestep = edge_total / nedges;
-  timestep *= 100 * timestep;
+  timestep *= timestep;
   workspace = (cholmod_common *)malloc(sizeof(cholmod_common));
   cholmod_start(workspace);
   mat1 = 0;
