@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define WIDTH 20
-#define HEIGHT 20
-#define DEPTH 20
+#define WIDTH 30
+#define HEIGHT 30
+#define DEPTH 30
 
 int main() {
   int i, j, k, v;
