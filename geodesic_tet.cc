@@ -13,6 +13,12 @@
 // calculating the area of the dual 2-form, since this is an approximation
 // anyway)
 
+#include "main_tet.hh"
+#include "suitesparse/cholmod.h"
+#include <unordered_map>
+#include <cmath>
+#include <cfloat>
+
 // Data structures:
 
 // Constants (well, per mesh)
@@ -20,22 +26,22 @@ extern int ntets;
 extern int nedges;
 extern int nverts;
 extern Tet **tets;
+extern double *pos;
 
 #define SMALL_FLOAT 1000000*DBL_EPSILON
 
 static cholmod_common *workspace;
 cholmod_sparse *mat1, *mat2, *mat3;
 
-
-class Tet {
-  int verts[4];
-  double volume;
-  // To be calculated in step 0
+static inline double len(double x, double y, double z) {
+  return sqrt( (x*x) + (y*y) + (z*z) );
 }
+
+using namespace std;
 
 // An unordered map, allowing us to retrieve an edge index from vertex pairs,
 // although it should not be used directly
-unordered_map<long long int, int> vert_edge_map;
+unordered_map<Edge, int> vert_edge_map;
 // Note that nedges == vert_edge_map.size()
 
 // Returns the edge corresponding to the pair (i,j) should it exist; -1
@@ -43,37 +49,30 @@ unordered_map<long long int, int> vert_edge_map;
 // Given that we store the mesh as tets, there should be no reason to
 // make a call to this that returns -1, but we should try to be safe.
 int map_vert_to_edge(int i, int j) {
-  if (i > j)
-    return map_vert_to_edge(j, i);
-  long long int idx = (((long long int)i) << 32) + j;
-  if (vert_edge_map.count(idx)) {
-    return vert_edge_map[idx];
+  Edge e(i,j);
+  if (vert_edge_map.count(e)) {
+    return vert_edge_map[e];
   }
   return -1;
 }
 
 // Inserts an edge into the vertex pair - edge map
 void vem_insert_edge(int i, int j, int e) {
-  if (i > j) {
-    vem_insert_edge(j, i, e);
-  }
-  else {
-    long long int idx = (((long long int)i) << 32) + j;
-    vert_edge_map[idx] = e;
-  }
+  Edge ee(i,j);
+  vert_edge_map[ee] = e;
 }
 
 // Sum of incident tet volumes on an edge
 double *edge_areas;
 
 // Sum of incident tet volumes on a vertex
-double *vertex_areas;
+double *vert_areas;
 
 void init() {
   // Set up things needed for calculations in this file; assumes all extern
   // variables have already been set
-  vertex_areas = calloc(nverts, sizeof(double));
-  edge_areas = calloc(nedges, sizeof(double));
+  vert_areas = (double *) calloc(nverts, sizeof(double));
+  edge_areas = (double *) calloc(nedges, sizeof(double));
   workspace = (cholmod_common *)malloc(sizeof(cholmod_common));
   cholmod_start(workspace);
 }
@@ -101,8 +100,10 @@ void step0() {
     z2 = pos[3 * t->verts[3]] - pos[3 * t->verts[0]];
     z3 = pos[3 * t->verts[3]] - pos[3 * t->verts[0]];
 
-    t->volume = abs( (x1 * y2 * z3 + x2 * y3 * z1 + x3 * y1 * z2) -
+    t->volume = ( (x1 * y2 * z3 + x2 * y3 * z1 + x3 * y1 * z2) -
                      (x1 * y3 * z2 + x2 * y1 * z3 + x3 * y2 * z1) ) / 6;
+    if (t->volume < 0)
+      t->volume = -t->volume;
 
     // We actually need to iterate through the _edges_ of the
     // tet; 0-1, 0-2, 0-3, 1-2, 1-3, 2-3
@@ -131,7 +132,7 @@ void step0() {
   cholmod_triplet *trip1;
   // trip1 will be used to build L_c
   
-  trip1 = cholmod_allocate_triplet(nvertices, nvertices + 6 * ntets, 1,
+  trip1 = cholmod_allocate_triplet(nverts, nverts, nverts + 6 * ntets, 1,
                                    CHOLMOD_REAL, workspace);
   // 6, because each tet has 6 edges (12, really, but the matrix is symmetric)
   // (12 _directed_ edges, if you're confused)
@@ -168,8 +169,8 @@ void step0() {
         double e_len = len(dx, dy, dz);
         
         // Update diagonal entries
-        ((double *)trip1->x)[v1] += (0.75 * edge_areas / (e_len * e_len));
-        ((double *)trip1->x)[v2] += (0.75 * edge_areas / (e_len * e_len));
+        ((double *)trip1->x)[v1] += (0.75 * edge_areas[e] / (e_len * e_len));
+        ((double *)trip1->x)[v2] += (0.75 * edge_areas[e] / (e_len * e_len));
 
         // Update non-diagonal entry (we're only doing one per time through
         // this loop, yes)
@@ -184,7 +185,7 @@ void step0() {
           ((int *)trip1->i)[nverts + 6 * i + idx] = v2;
           ((int *)trip1->j)[nverts + 6 * i + idx] = v1;
         }
-        ((double *)trip1->x)[nverts + 6 * i + idx] = -0.75 * edge_areas /
+        ((double *)trip1->x)[nverts + 6 * i + idx] = -0.75 * edge_areas[e] /
           (e_len * e_len);
       }
     
