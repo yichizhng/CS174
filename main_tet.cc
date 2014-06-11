@@ -43,8 +43,18 @@ using namespace std;
 void redraw() {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   ui->ApplyViewingTransformation();
+
+  /*
+  glBegin(GL_POINTS);
+  for (int i = 0; i < nverts; ++i) {
+    glColor3f(1.0f - 10*dists[i], 1.0f - 10*dists[i], 1.0f - 10*dists[i]);
+    glVertex3f(pos[3*i], pos[3*i+1], pos[3*i+2]);
+  }
+  glEnd();
+  */
+  
   glBegin(GL_TRIANGLES);
-  double m = 0.001;
+  double m = 100;
   for (int i = 0; i < ntets; ++i) {
     glTexCoord1f(m*dists[tets[i]->verts[0]]);
     glVertex3f(pos[3*tets[i]->verts[0]],
@@ -159,6 +169,9 @@ int main(int argc, char **argv) {
   blah.push_back(0);
   setverts(blah);
   step1(dists);
+
+  cerr << dists[0] << endl;
+  cerr << dists[nverts-1] << endl;
 
   // Setting up a texture to use
 

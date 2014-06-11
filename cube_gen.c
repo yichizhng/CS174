@@ -23,9 +23,13 @@ int main() {
       for (k = 1; k < DEPTH; ++k) {
         v = i * HEIGHT * DEPTH + j * DEPTH + k;
         printf("4 %d %d %d %d\n", v, v-HEIGHT*DEPTH, v-DEPTH, v-1);
+        /*
         printf("4 %d %d %d %d\n", v-(HEIGHT*DEPTH+DEPTH), v-HEIGHT*DEPTH, v-DEPTH, v-(1+HEIGHT*DEPTH+DEPTH));
         printf("4 %d %d %d %d\n", v-(HEIGHT*DEPTH+1), v-HEIGHT*DEPTH, v-(1+HEIGHT*DEPTH+DEPTH), v-1);
-        printf("4 %d %d %d %d\n", v-(DEPTH+1), v-(1+HEIGHT*DEPTH+DEPTH), v-DEPTH, v-1);
+        printf("4 %d %d %d %d\n", v-(DEPTH+1), v-(1+HEIGHT*DEPTH+DEPTH), v-DEPTH, v-1); */
+        printf("4 %d %d %d %d\n", v-(HEIGHT*DEPTH+DEPTH), v-HEIGHT*DEPTH, v-DEPTH, v-(1+HEIGHT*DEPTH+DEPTH));
+        printf("4 %d %d %d %d\n", v-(HEIGHT*DEPTH+1), v-(1+HEIGHT*DEPTH+DEPTH), v-HEIGHT*DEPTH, v-1);
+        printf("4 %d %d %d %d\n", v-(DEPTH+1), v-DEPTH, v-(1+HEIGHT*DEPTH+DEPTH), v-1);
         printf("4 %d %d %d %d\n", v-HEIGHT*DEPTH, v-DEPTH, v-1, v-(1+HEIGHT*DEPTH+DEPTH));
       }
   return 0;

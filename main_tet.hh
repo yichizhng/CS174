@@ -19,7 +19,7 @@ namespace std {
   template <>
   struct hash<Edge> {
     size_t operator()(const Edge& e) const {
-      return (hash<int>()(e.v1) ^ hash<int>()(-e.v2));
+      return (hash<int>()(e.v1 + e.v2<<16));
     }
   };
 }
