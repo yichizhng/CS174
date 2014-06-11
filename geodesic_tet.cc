@@ -3,8 +3,6 @@
 
 // The steps are roughly analogous to those of the 2-simplicial manifold:
 
-// Integrate the heat flow for a fixed time t (we can use the same one, really)
-
 // The question here is what the Laplacian is; well, it's \delta_1 d_0. Neither
 // of these is particularly _difficult_ to calculate, just very tedious.
 // (the main annoyance is the question of what *_1 is; we approximate it as
@@ -33,21 +31,20 @@ extern double *pos;
 static cholmod_common *workspace;
 cholmod_sparse *mat1, *mat2, *mat3;
 
+cholmod_factor *L1, *L2, *L3;
+
 static inline double len(double x, double y, double z) {
   return sqrt( (x*x) + (y*y) + (z*z) );
 }
 
 using namespace std;
 
-// An unordered map, allowing us to retrieve an edge index from vertex pairs,
-// although it should not be used directly
+// An unordered map, allowing us to retrieve an edge index from vertex pairs
 unordered_map<Edge, int> vert_edge_map;
 // Note that nedges == vert_edge_map.size()
 
 // Returns the edge corresponding to the pair (i,j) should it exist; -1
 // otherwise
-// Given that we store the mesh as tets, there should be no reason to
-// make a call to this that returns -1, but we should try to be safe.
 int map_vert_to_edge(int i, int j) {
   Edge e(i,j);
   if (vert_edge_map.count(e)) {
@@ -62,8 +59,12 @@ void vem_insert_edge(int i, int j, int e) {
   vert_edge_map[ee] = e;
 }
 
+double t;
+
 // Sum of incident tet volumes on an edge
 double *edge_areas;
+
+double *edge_lens;
 
 // Sum of incident tet volumes on a vertex
 double *vert_areas;
@@ -73,7 +74,6 @@ void init() {
   // variables have already been set, except nedges; we also calculate
   // the edge set here
   vert_areas = (double *) calloc(nverts, sizeof(double));
-  edge_areas = (double *) calloc(nedges, sizeof(double));
   int e = 0;
   for (int i = 0; i < ntets; ++i) {
     Tet *t = tets[i];
@@ -90,7 +90,20 @@ void init() {
     if (map_vert_to_edge(t->verts[2], t->verts[3]) == -1)
       vem_insert_edge(t->verts[2], t->verts[3], e++);
   }
-  nedges = vert_edge_map.size();
+  nedges = e;
+  
+  edge_areas = (double *) calloc(nedges, sizeof(double));
+  edge_lens = (double *) calloc(nedges, sizeof(double));
+  double edge_total = 0;
+  for (auto it = vert_edge_map.begin(); it != vert_edge_map.end(); ++it) {
+    double dx, dy, dz;
+    dx = pos[3*it->first.v1] - pos[3*it->first.v2];
+    dy = pos[3*it->first.v1+1] - pos[3*it->first.v2+1];
+    dz = pos[3*it->first.v1+2] - pos[3*it->first.v2+2];
+    edge_lens[it->second] = len(dx, dy, dz);
+    edge_total += len(dx, dy, dz);
+  }
+  t = edge_total / nedges;
   workspace = (cholmod_common *)malloc(sizeof(cholmod_common));
   cholmod_start(workspace);
 }
@@ -148,7 +161,7 @@ void step0() {
   // Meanwhile L_(i,i) is (sum over j adjacent to i) -L_(i,j)
 
   cholmod_triplet *trip1;
-  // trip1 will be used to build L_c
+  // trip1 will be used to build both -L_c and A - tL_c
   
   trip1 = cholmod_allocate_triplet(nverts, nverts, nverts + 6 * ntets, 1,
                                    CHOLMOD_REAL, workspace);
@@ -208,4 +221,15 @@ void step0() {
       }
     
   }
+
+  mat2 = cholmod_triplet_to_sparse(trip1, 0, workspace);
+  L2 = cholmod_analyze(mat2, workspace);
+  cholmod_factorize(mat2, L2, workspace);
+  
+  // Modify trip1 to generate A - tL
+  for (int i = 0; i < nverts; ++i) {
+    ((double *)trip1->x)[i] *= t;
+    ((double *)trip1->x)[i] += vert_areas[i]/4;
+  }
+  
 }
