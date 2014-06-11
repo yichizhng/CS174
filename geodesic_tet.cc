@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cfloat>
 #include <vector>
+#include <cstring>
 
 // Data structures:
 
@@ -71,6 +72,9 @@ double *edge_lens;
 
 // Sum of incident tet volumes on a vertex
 double *vert_areas;
+
+// tet volumes
+double *tet_volumes;
 
 void init() {
   // Set up things needed for calculations in this file; assumes all extern
@@ -286,10 +290,11 @@ void step1(double *dists) {
 
   // The gradient over a tet is just 1/3 the sum over vertices of the
   // value of u at that vertex times the area of the opposing face
-  // times the normal of the opposing face
+  // times the normal of the opposing face divided by the volume
 
-  // I leave out some multiplicative factors in this calculation because
-  // they are more or less irrelevant (we were going to normalize it anyway)
+  // I leave out some multiplicative factors (like the volume) in this
+  // calculation because they are more or less irrelevant
+  // (we were going to normalize it anyway)
   for (int i = 0; i < ntets; ++i) {
     Tet *t = tets[i];
 
@@ -448,5 +453,88 @@ void step1(double *dists) {
     tetgrad[1] /= grad_len;
     tetgrad[2] /= grad_len;
     // Now the gradient is normalized
+
+    // Use it to update vertex divergences
+    // The vertex divergence is the sum over incident tets of
+    // (1/3|A_t|) sum ( (|e*|/|e|) (e dot X) )
+    // where X is the normalized gradient over the tet, and the
+    // sum is taken over edges e of the tet originating at the vertex.
+    
+    double dx, dy, dz;
+    // Edges 0-1 and 1-0
+    int e = map_vert_to_edge(t->verts[0], t->verts[1]);
+    dx = pos[3 * t->verts[0]] - pos[3 * t->verts[1]];
+    dy = pos[3 * t->verts[0] + 1] - pos[3 * t->verts[1] + 1];
+    dz = pos[3 * t->verts[0] + 2] - pos[3 * t->verts[1] + 2];
+    double e_len = len(dx, dy, dz);
+    double e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
+    vdiv[t->verts[0]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
+    vdiv[t->verts[1]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
+
+    // Edges 0-2 and 2-0
+    dx = pos[3 * t->verts[0]] - pos[3 * t->verts[2]];
+    dy = pos[3 * t->verts[0] + 1] - pos[3 * t->verts[2] + 1];
+    dz = pos[3 * t->verts[0] + 2] - pos[3 * t->verts[2] + 2];
+    e_len = len(dx, dy, dz);
+    e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
+    vdiv[t->verts[0]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[2]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    
+    // Edges 0-3 and 3-0
+    dx = pos[3 * t->verts[0]] - pos[3 * t->verts[3]];
+    dy = pos[3 * t->verts[0] + 1] - pos[3 * t->verts[3] + 1];
+    dz = pos[3 * t->verts[0] + 2] - pos[3 * t->verts[3] + 2];
+    e_len = len(dx, dy, dz);
+    e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
+    vdiv[t->verts[0]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[3]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+
+    // Edges 1-2 and 2-1
+    dx = pos[3 * t->verts[1]] - pos[3 * t->verts[2]];
+    dy = pos[3 * t->verts[1] + 1] - pos[3 * t->verts[2] + 1];
+    dz = pos[3 * t->verts[1] + 2] - pos[3 * t->verts[2] + 2];
+    e_len = len(dx, dy, dz);
+    e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
+    vdiv[t->verts[1]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[2]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+
+    // Edges 1-3 and 3-1
+    dx = pos[3 * t->verts[1]] - pos[3 * t->verts[3]];
+    dy = pos[3 * t->verts[1] + 1] - pos[3 * t->verts[3] + 1];
+    dz = pos[3 * t->verts[1] + 2] - pos[3 * t->verts[3] + 2];
+    e_len = len(dx, dy, dz);
+    e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
+    vdiv[t->verts[1]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[3]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+
+    // Edges 2-3 and 3-2
+    dx = pos[3 * t->verts[2]] - pos[3 * t->verts[3]];
+    dy = pos[3 * t->verts[2] + 1] - pos[3 * t->verts[3] + 1];
+    dz = pos[3 * t->verts[2] + 2] - pos[3 * t->verts[3] + 2];
+    e_len = len(dx, dy, dz);
+    e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
+    vdiv[t->verts[2]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[3]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
   }
+
+  // Now that we're done with divergences, solve the Poisson problem
+  cholmod_free_dense(&vec2, workspace); // don't need it anymore
+
+  vec2 = cholmod_solve(CHOLMOD_A, L2, vec3, workspace);
+  memcpy(dists, vec2->x, nverts * sizeof(double));
+
+  double min = dists[0];
+  for (int i = 1; i < nverts; ++i) {
+    if (dists[i] < min)
+      min = dists[i];
+  }
+  for (int i = 0; i < nverts; ++i) {
+    dists[i] -= min;
+  }
+
+  // And free everything
+  cholmod_free_dense(&vec1, workspace);
+  cholmod_free_dense(&vec2, workspace);
+  cholmod_free_dense(&vec3, workspace);
+  return;
 }
