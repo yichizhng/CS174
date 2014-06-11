@@ -149,7 +149,6 @@ void step0() {
 
     t->volume = ( (x1 * y2 * z3 + x2 * y3 * z1 + x3 * y1 * z2) -
                      (x1 * y3 * z2 + x2 * y1 * z3 + x3 * y2 * z1) ) / 6;
-    cerr << t->volume << endl;
     if (t->volume < 0)
       t->volume = -t->volume;
 
@@ -169,11 +168,6 @@ void step0() {
       vert_areas[j] += t->volume;
     }
   }
-
-  for (int i = 0; i < nedges; ++i) {
-    cerr << edge_areas[i] << endl;
-  }
-  cerr << endl;
 
   // (i != j)
   // L_(i,j) = (sum over tetrahedra t incident on both i and j)
@@ -221,8 +215,8 @@ void step0() {
         dz = pos[3*v2+2] - pos[3*v1+2];
         double e_len = len(dx, dy, dz);
         // Update diagonal entries
-        ((double *)trip1->x)[v1] += (0.75 * edge_areas[e] / (e_len * e_len));
-        ((double *)trip1->x)[v2] += (0.75 * edge_areas[e] / (e_len * e_len));
+        ((double *)trip1->x)[v1] += (0.375 * edge_areas[e] / (e_len * e_len));
+        ((double *)trip1->x)[v2] += (0.375 * edge_areas[e] / (e_len * e_len));
 
         // Update non-diagonal entry (we're only doing one per time through
         // this loop, yes)
@@ -247,23 +241,18 @@ void step0() {
   L2 = cholmod_analyze(mat2, workspace);
   cholmod_factorize(mat2, L2, workspace);
   
-  cerr << endl;
   // Modify trip1 to generate A - tL
   for (int i = 0; i < nverts; ++i) {
-    cerr << ((double *)trip1->x)[i] << endl;
     ((double *)trip1->x)[i] *= timestep;
     ((double *)trip1->x)[i] += vert_areas[i]/4;
   }
   for (int i = nverts; i < nverts + 6 * ntets; ++i) {
-    cerr << ((double *)trip1->x)[i] << endl;
     ((double *)trip1->x)[i] *= timestep;
   }
 
   mat1 = cholmod_triplet_to_sparse(trip1, 0, workspace);
-
   L1 = cholmod_analyze(mat1, workspace);
-  cholmod_print_factor(L1, "fac1", workspace);
-  cholmod_print_factor(L2, "fac2", workspace);
+  cholmod_factorize(mat1, L1, workspace);
 }
 
 vector<int> vertset;
@@ -301,6 +290,13 @@ void step1(double *dists) {
   double *vdiv = (double *)vec3->x;
   double tetgrad[3]; //gradient of a tet as a 3-vector
 
+  /*
+  for (int i = 0; i < nverts; ++i) {
+    cerr << heats[i] << endl;
+  }
+  cerr << endl;
+  */
+  
   // The gradient over a tet is just 1/3 the sum over vertices of the
   // value of u at that vertex times the area of the opposing face
   // times the normal of the opposing face divided by the volume
@@ -349,9 +345,9 @@ void step1(double *dists) {
         nz = -nz;
       }
       // Add this to the tet gradient
-      tetgrad[0] += nx;
-      tetgrad[1] += ny;
-      tetgrad[2] += nz;
+      tetgrad[0] += nx * heats[t->verts[0]];
+      tetgrad[1] += ny * heats[t->verts[0]];
+      tetgrad[2] += nz * heats[t->verts[0]];
     }
 
     // Second vertex
@@ -385,9 +381,9 @@ void step1(double *dists) {
         nz = -nz;
       }
       // Add this to the tet gradient
-      tetgrad[0] += nx;
-      tetgrad[1] += ny;
-      tetgrad[2] += nz;
+      tetgrad[0] += nx * heats[t->verts[1]];
+      tetgrad[1] += ny * heats[t->verts[1]];
+      tetgrad[2] += nz * heats[t->verts[1]];
     }
     // Third vertex
     {
@@ -420,9 +416,9 @@ void step1(double *dists) {
         nz = -nz;
       }
       // Add this to the tet gradient
-      tetgrad[0] += nx;
-      tetgrad[1] += ny;
-      tetgrad[2] += nz;
+      tetgrad[0] += nx * heats[t->verts[2]];
+      tetgrad[1] += ny * heats[t->verts[2]];
+      tetgrad[2] += nz * heats[t->verts[2]];
     }
     // fourth vertex
     {
@@ -455,13 +451,14 @@ void step1(double *dists) {
         nz = -nz;
       }
       // Add this to the tet gradient
-      tetgrad[0] += nx;
-      tetgrad[1] += ny;
-      tetgrad[2] += nz;
+      tetgrad[0] += nx * heats[t->verts[3]];
+      tetgrad[1] += ny * heats[t->verts[3]];
+      tetgrad[2] += nz * heats[t->verts[3]];
     }
     double grad_len = len(tetgrad[0], tetgrad[1], tetgrad[2]);
-    if (grad_len == 0)
+    if (grad_len == 0) {
       continue;
+    }
     tetgrad[0] /= grad_len;
     tetgrad[1] /= grad_len;
     tetgrad[2] /= grad_len;
@@ -481,8 +478,8 @@ void step1(double *dists) {
     dz = pos[3 * t->verts[0] + 2] - pos[3 * t->verts[1] + 2];
     double e_len = len(dx, dy, dz);
     double e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
-    vdiv[t->verts[0]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
-    vdiv[t->verts[1]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
+    vdiv[t->verts[0]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
+    vdiv[t->verts[1]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
 
     // Edges 0-2 and 2-0
     dx = pos[3 * t->verts[0]] - pos[3 * t->verts[2]];
@@ -490,8 +487,8 @@ void step1(double *dists) {
     dz = pos[3 * t->verts[0] + 2] - pos[3 * t->verts[2] + 2];
     e_len = len(dx, dy, dz);
     e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
-    vdiv[t->verts[0]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
-    vdiv[t->verts[2]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[0]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
+    vdiv[t->verts[2]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
     
     // Edges 0-3 and 3-0
     dx = pos[3 * t->verts[0]] - pos[3 * t->verts[3]];
@@ -499,8 +496,8 @@ void step1(double *dists) {
     dz = pos[3 * t->verts[0] + 2] - pos[3 * t->verts[3] + 2];
     e_len = len(dx, dy, dz);
     e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
-    vdiv[t->verts[0]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
-    vdiv[t->verts[3]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[0]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
+    vdiv[t->verts[3]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
 
     // Edges 1-2 and 2-1
     dx = pos[3 * t->verts[1]] - pos[3 * t->verts[2]];
@@ -508,8 +505,8 @@ void step1(double *dists) {
     dz = pos[3 * t->verts[1] + 2] - pos[3 * t->verts[2] + 2];
     e_len = len(dx, dy, dz);
     e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
-    vdiv[t->verts[1]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
-    vdiv[t->verts[2]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[1]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
+    vdiv[t->verts[2]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
 
     // Edges 1-3 and 3-1
     dx = pos[3 * t->verts[1]] - pos[3 * t->verts[3]];
@@ -517,8 +514,8 @@ void step1(double *dists) {
     dz = pos[3 * t->verts[1] + 2] - pos[3 * t->verts[3] + 2];
     e_len = len(dx, dy, dz);
     e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
-    vdiv[t->verts[1]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
-    vdiv[t->verts[3]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[1]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
+    vdiv[t->verts[3]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
 
     // Edges 2-3 and 3-2
     dx = pos[3 * t->verts[2]] - pos[3 * t->verts[3]];
@@ -526,8 +523,8 @@ void step1(double *dists) {
     dz = pos[3 * t->verts[2] + 2] - pos[3 * t->verts[3] + 2];
     e_len = len(dx, dy, dz);
     e_dot_x = dx * tetgrad[0] + dy * tetgrad[1] + dz * tetgrad[2];
-    vdiv[t->verts[2]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
-    vdiv[t->verts[3]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len));
+    vdiv[t->verts[2]] += (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
+    vdiv[t->verts[3]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
   }
 
   // Now that we're done with divergences, solve the Poisson problem
