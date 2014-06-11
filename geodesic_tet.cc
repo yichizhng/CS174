@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <cmath>
 #include <cfloat>
+#include <vector>
 
 // Data structures:
 
@@ -32,6 +33,8 @@ static cholmod_common *workspace;
 cholmod_sparse *mat1, *mat2;
 
 cholmod_factor *L1, *L2;
+
+cholmod_dense *vec1, *vec2, *vec3;
 
 static inline double len(double x, double y, double z) {
   return sqrt( (x*x) + (y*y) + (z*z) );
@@ -59,7 +62,7 @@ void vem_insert_edge(int i, int j, int e) {
   vert_edge_map[ee] = e;
 }
 
-double t;
+double timestep;
 
 // Sum of incident tet volumes on an edge
 double *edge_areas;
@@ -103,9 +106,16 @@ void init() {
     edge_lens[it->second] = len(dx, dy, dz);
     edge_total += len(dx, dy, dz);
   }
-  t = edge_total / nedges;
+  timestep = edge_total / nedges;
+  timestep *= timestep;
   workspace = (cholmod_common *)malloc(sizeof(cholmod_common));
   cholmod_start(workspace);
+  mat1 = 0;
+  mat2 = 0;
+  vec1 = 0;
+  vec2 = 0;
+  L1 = 0;
+  L2 = 0;
 }
 
 // Calculate the Laplacian matrix L as well as the diagonal area matrix
@@ -228,14 +238,215 @@ void step0() {
   
   // Modify trip1 to generate A - tL
   for (int i = 0; i < nverts; ++i) {
-    ((double *)trip1->x)[i] *= t;
+    ((double *)trip1->x)[i] *= timestep;
     ((double *)trip1->x)[i] += vert_areas[i]/4;
   }
   for (int i = nverts; i < nverts + 6 * ntets; ++i) {
-    ((double *)trip1->x)[i] *= t;
+    ((double *)trip1->x)[i] *= timestep;
   }
 
   mat1 = cholmod_triplet_to_sparse(trip1, 0, workspace);
 
   L1 = cholmod_analyze(mat1, workspace);
+}
+
+vector<int> vertset;
+void setupHeat() {
+  // Sets up initial heat vector based on vertset (a Kronecker delta on
+  // vertset, essentially)
+  if (vec1 != NULL)
+    cholmod_free_dense(&vec1, workspace);
+  vec1 = cholmod_zeros(nverts, 1, CHOLMOD_REAL, workspace);
+  for (int v : vertset)
+    ((double *)vec1->x)[v] = 1;
+}
+
+void setverts(const vector<int> &set) {
+  vertset = set;
+  setupHeat();
+}
+
+void step1(double *dists) {
+  // Assumes setverts has already been called with the appropriate set.
+  // Outputs into dists, which is assumed to be an array of size nverts.
+
+  // Obviously we need to calculate the gradient and divergence here.
+  // Of course they are more or less analogous to the 2-D ones (see
+  // Keenan Crane's SIGGRAPH 2013 talk)
+
+  if (vec2) {
+    cholmod_free_dense(&vec2, workspace);
+  }
+  vec2 = cholmod_solve(CHOLMOD_A, L1, vec1, workspace);
+  double *heats = ((double *)vec2->x);
+  // This gives us vec2 (u)
+  vec3 = cholmod_zeros(nverts, 1, CHOLMOD_REAL, workspace);
+  double *vdiv = (double *)vec3->x;
+  double tetgrad[3]; //gradient of a tet as a 3-vector
+
+  // The gradient over a tet is just 1/3 the sum over vertices of the
+  // value of u at that vertex times the area of the opposing face
+  // times the normal of the opposing face
+
+  // I leave out some multiplicative factors in this calculation because
+  // they are more or less irrelevant (we were going to normalize it anyway)
+  for (int i = 0; i < ntets; ++i) {
+    Tet *t = tets[i];
+
+    // Zero the tet gradient
+    tetgrad[0] = 0;
+    tetgrad[1] = 0;
+    tetgrad[2] = 0;
+
+    // first vertex
+    // Notice that AN is just half the cross-product of two remaing edges
+    // (in the appropriate direction; we can check this)
+    {
+      double dx1, dx2, dx3;
+      double dy1, dy2, dy3;
+      double dz1, dz2, dz3;
+      double nx, ny, nz;
+      // These are 3-0, 3-1, and 3-2 respectively
+      dx1 = pos[3*t->verts[3]] - pos[3*t->verts[0]];
+      dy1 = pos[3*t->verts[3]+1] - pos[3*t->verts[0]+1];
+      dz1 = pos[3*t->verts[3]+2] - pos[3*t->verts[0]+2];
+      
+      dx2 = pos[3*t->verts[3]] - pos[3*t->verts[1]];
+      dy2 = pos[3*t->verts[3]+1] - pos[3*t->verts[1]+1];
+      dz2 = pos[3*t->verts[3]+2] - pos[3*t->verts[1]+2];
+      
+      dx3 = pos[3*t->verts[3]] - pos[3*t->verts[2]];
+      dy3 = pos[3*t->verts[3]+1] - pos[3*t->verts[2]+1];
+      dz3 = pos[3*t->verts[3]+2] - pos[3*t->verts[2]+2];
+      
+      // We will use the cross product of the latter two, using the first
+      // to check orientation
+      nx = dy2 * dz3 - dz2 * dy3;
+      ny = dz2 * dx3 - dx2 * dz3;
+      nz = dx2 * dy3 - dy2 * dx3;
+      if (nx * dx1 + ny * dy1 + nz * dz1 < 0) {
+        // Negate them
+        nx = -nx;
+        ny = -ny;
+        nz = -nz;
+      }
+      // Add this to the tet gradient
+      tetgrad[0] += nx;
+      tetgrad[1] += ny;
+      tetgrad[2] += nz;
+    }
+
+    // Second vertex
+    {
+      double dx1, dx2, dx3;
+      double dy1, dy2, dy3;
+      double dz1, dz2, dz3;
+      double nx, ny, nz;
+      // These are 0-1, 0-2, and 0-3 respectively
+      dx1 = pos[3*t->verts[0]] - pos[3*t->verts[1]];
+      dy1 = pos[3*t->verts[0]+1] - pos[3*t->verts[1]+1];
+      dz1 = pos[3*t->verts[0]+2] - pos[3*t->verts[1]+2];
+      
+      dx2 = pos[3*t->verts[0]] - pos[3*t->verts[2]];
+      dy2 = pos[3*t->verts[0]+1] - pos[3*t->verts[2]+1];
+      dz2 = pos[3*t->verts[0]+2] - pos[3*t->verts[2]+2];
+      
+      dx3 = pos[3*t->verts[0]] - pos[3*t->verts[3]];
+      dy3 = pos[3*t->verts[0]+1] - pos[3*t->verts[3]+1];
+      dz3 = pos[3*t->verts[0]+2] - pos[3*t->verts[3]+2];
+      
+      // We will use the cross product of the latter two, using the first
+      // to check orientation
+      nx = dy2 * dz3 - dz2 * dy3;
+      ny = dz2 * dx3 - dx2 * dz3;
+      nz = dx2 * dy3 - dy2 * dx3;
+      if (nx * dx1 + ny * dy1 + nz * dz1 < 0) {
+        // Negate them
+        nx = -nx;
+        ny = -ny;
+        nz = -nz;
+      }
+      // Add this to the tet gradient
+      tetgrad[0] += nx;
+      tetgrad[1] += ny;
+      tetgrad[2] += nz;
+    }
+    // Third vertex
+    {
+      double dx1, dx2, dx3;
+      double dy1, dy2, dy3;
+      double dz1, dz2, dz3;
+      double nx, ny, nz;
+      // These are 1-2, 1-3, and 1-0 respectively
+      dx1 = pos[3*t->verts[1]] - pos[3*t->verts[2]];
+      dy1 = pos[3*t->verts[1]+1] - pos[3*t->verts[2]+1];
+      dz1 = pos[3*t->verts[1]+2] - pos[3*t->verts[2]+2];
+      
+      dx2 = pos[3*t->verts[1]] - pos[3*t->verts[3]];
+      dy2 = pos[3*t->verts[1]+1] - pos[3*t->verts[3]+1];
+      dz2 = pos[3*t->verts[1]+2] - pos[3*t->verts[3]+2];
+      
+      dx3 = pos[3*t->verts[1]] - pos[3*t->verts[0]];
+      dy3 = pos[3*t->verts[1]+1] - pos[3*t->verts[0]+1];
+      dz3 = pos[3*t->verts[1]+2] - pos[3*t->verts[0]+2];
+      
+      // We will use the cross product of the latter two, using the first
+      // to check orientation
+      nx = dy2 * dz3 - dz2 * dy3;
+      ny = dz2 * dx3 - dx2 * dz3;
+      nz = dx2 * dy3 - dy2 * dx3;
+      if (nx * dx1 + ny * dy1 + nz * dz1 < 0) {
+        // Negate them
+        nx = -nx;
+        ny = -ny;
+        nz = -nz;
+      }
+      // Add this to the tet gradient
+      tetgrad[0] += nx;
+      tetgrad[1] += ny;
+      tetgrad[2] += nz;
+    }
+    // fourth vertex
+    {
+      double dx1, dx2, dx3;
+      double dy1, dy2, dy3;
+      double dz1, dz2, dz3;
+      double nx, ny, nz;
+      // These are 2-3, 2-0, and 2-1 respectively
+      dx1 = pos[3*t->verts[2]] - pos[3*t->verts[3]];
+      dy1 = pos[3*t->verts[2]+1] - pos[3*t->verts[3]+1];
+      dz1 = pos[3*t->verts[2]+2] - pos[3*t->verts[3]+2];
+      
+      dx2 = pos[3*t->verts[2]] - pos[3*t->verts[0]];
+      dy2 = pos[3*t->verts[2]+1] - pos[3*t->verts[0]+1];
+      dz2 = pos[3*t->verts[2]+2] - pos[3*t->verts[0]+2];
+      
+      dx3 = pos[3*t->verts[2]] - pos[3*t->verts[1]];
+      dy3 = pos[3*t->verts[2]+1] - pos[3*t->verts[1]+1];
+      dz3 = pos[3*t->verts[2]+2] - pos[3*t->verts[1]+2];
+      
+      // We will use the cross product of the latter two, using the first
+      // to check orientation
+      nx = dy2 * dz3 - dz2 * dy3;
+      ny = dz2 * dx3 - dx2 * dz3;
+      nz = dx2 * dy3 - dy2 * dx3;
+      if (nx * dx1 + ny * dy1 + nz * dz1 < 0) {
+        // Negate them
+        nx = -nx;
+        ny = -ny;
+        nz = -nz;
+      }
+      // Add this to the tet gradient
+      tetgrad[0] += nx;
+      tetgrad[1] += ny;
+      tetgrad[2] += nz;
+    }
+    double grad_len = len(tetgrad[0], tetgrad[1], tetgrad[2]);
+    if (grad_len == 0)
+      continue;
+    tetgrad[0] /= grad_len;
+    tetgrad[1] /= grad_len;
+    tetgrad[2] /= grad_len;
+    // Now the gradient is normalized
+  }
 }
