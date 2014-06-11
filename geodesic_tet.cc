@@ -70,9 +70,27 @@ double *vert_areas;
 
 void init() {
   // Set up things needed for calculations in this file; assumes all extern
-  // variables have already been set
+  // variables have already been set, except nedges; we also calculate
+  // the edge set here
   vert_areas = (double *) calloc(nverts, sizeof(double));
   edge_areas = (double *) calloc(nedges, sizeof(double));
+  int e = 0;
+  for (int i = 0; i < ntets; ++i) {
+    Tet *t = tets[i];
+    if (map_vert_to_edge(t->verts[0], t->verts[1]) == -1)
+      vem_insert_edge(t->verts[0], t->verts[1], e++);
+    if (map_vert_to_edge(t->verts[0], t->verts[2]) == -1)
+      vem_insert_edge(t->verts[0], t->verts[2], e++);
+    if (map_vert_to_edge(t->verts[0], t->verts[3]) == -1)
+      vem_insert_edge(t->verts[0], t->verts[3], e++);
+    if (map_vert_to_edge(t->verts[1], t->verts[2]) == -1)
+      vem_insert_edge(t->verts[1], t->verts[2], e++);
+    if (map_vert_to_edge(t->verts[1], t->verts[3]) == -1)
+      vem_insert_edge(t->verts[1], t->verts[3], e++);
+    if (map_vert_to_edge(t->verts[2], t->verts[3]) == -1)
+      vem_insert_edge(t->verts[2], t->verts[3], e++);
+  }
+  nedges = vert_edge_map.size();
   workspace = (cholmod_common *)malloc(sizeof(cholmod_common));
   cholmod_start(workspace);
 }
