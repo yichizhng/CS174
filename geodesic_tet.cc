@@ -30,7 +30,7 @@ extern int nverts;
 extern Tet **tets;
 extern double *pos;
 
-#define SMALL_FLOAT 1000000*DBL_EPSILON
+#define SMALL_FLOAT 10000*DBL_EPSILON
 
 static cholmod_common *workspace;
 cholmod_sparse *mat1, *mat2;
@@ -83,23 +83,22 @@ void init() {
   // variables have already been set, except nedges; we also calculate
   // the edge set here as well as the timestep t
   vert_areas = (double *) calloc(nverts, sizeof(double));
-  int e = 0;
   for (int i = 0; i < ntets; ++i) {
     Tet *t = tets[i];
     if (map_vert_to_edge(t->verts[0], t->verts[1]) == -1)
-      vem_insert_edge(t->verts[0], t->verts[1], e++);
+      vem_insert_edge(t->verts[0], t->verts[1], vert_edge_map.size());
     if (map_vert_to_edge(t->verts[0], t->verts[2]) == -1)
-      vem_insert_edge(t->verts[0], t->verts[2], e++);
+      vem_insert_edge(t->verts[0], t->verts[2], vert_edge_map.size());
     if (map_vert_to_edge(t->verts[0], t->verts[3]) == -1)
-      vem_insert_edge(t->verts[0], t->verts[3], e++);
+      vem_insert_edge(t->verts[0], t->verts[3], vert_edge_map.size());
     if (map_vert_to_edge(t->verts[1], t->verts[2]) == -1)
-      vem_insert_edge(t->verts[1], t->verts[2], e++);
+      vem_insert_edge(t->verts[1], t->verts[2], vert_edge_map.size());
     if (map_vert_to_edge(t->verts[1], t->verts[3]) == -1)
-      vem_insert_edge(t->verts[1], t->verts[3], e++);
+      vem_insert_edge(t->verts[1], t->verts[3], vert_edge_map.size());
     if (map_vert_to_edge(t->verts[2], t->verts[3]) == -1)
-      vem_insert_edge(t->verts[2], t->verts[3], e++);
+      vem_insert_edge(t->verts[2], t->verts[3], vert_edge_map.size());
   }
-  nedges = e;
+  nedges = vert_edge_map.size();
   
   edge_areas = (double *) calloc(nedges, sizeof(double));
   edge_lens = (double *) calloc(nedges, sizeof(double));
@@ -113,7 +112,7 @@ void init() {
     edge_total += len(dx, dy, dz);
   }
   timestep = edge_total / nedges;
-  timestep *= timestep;
+  timestep *= 100 * timestep;
   workspace = (cholmod_common *)malloc(sizeof(cholmod_common));
   cholmod_start(workspace);
   mat1 = 0;
@@ -192,7 +191,7 @@ void step0() {
   for (int i = 0; i < nverts; ++i) {
     ((int *)trip1->i)[i] = i;
     ((int *)trip1->j)[i] = i;
-    ((double *)trip1->x)[i] = SMALL_FLOAT;
+    ((double *)trip1->x)[i] = 0;
   }
 
   for (int i = 0; i < ntets; ++i) {
@@ -215,8 +214,8 @@ void step0() {
         dz = pos[3*v2+2] - pos[3*v1+2];
         double e_len = len(dx, dy, dz);
         // Update diagonal entries
-        ((double *)trip1->x)[v1] += (0.375 * edge_areas[e] / (e_len * e_len));
-        ((double *)trip1->x)[v2] += (0.375 * edge_areas[e] / (e_len * e_len));
+        ((double *)trip1->x)[v1] += (0.75 * edge_areas[e] / (e_len * e_len));
+        ((double *)trip1->x)[v2] += (0.75 * edge_areas[e] / (e_len * e_len));
 
         // Update non-diagonal entry (we're only doing one per time through
         // this loop, yes)
@@ -241,14 +240,18 @@ void step0() {
   L2 = cholmod_analyze(mat2, workspace);
   cholmod_factorize(mat2, L2, workspace);
   
+  double blah = 0;
   // Modify trip1 to generate A - tL
   for (int i = 0; i < nverts; ++i) {
+    blah += ((double *)trip1->x)[i];
     ((double *)trip1->x)[i] *= timestep;
     ((double *)trip1->x)[i] += vert_areas[i]/4;
   }
   for (int i = nverts; i < nverts + 6 * ntets; ++i) {
+    blah += ((double *)trip1->x)[i];
     ((double *)trip1->x)[i] *= timestep;
   }
+  cerr << blah << endl;
 
   mat1 = cholmod_triplet_to_sparse(trip1, 0, workspace);
   L1 = cholmod_analyze(mat1, workspace);
@@ -482,6 +485,7 @@ void step1(double *dists) {
     vdiv[t->verts[1]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
 
     // Edges 0-2 and 2-0
+    e = map_vert_to_edge(t->verts[0], t->verts[2]);
     dx = pos[3 * t->verts[0]] - pos[3 * t->verts[2]];
     dy = pos[3 * t->verts[0] + 1] - pos[3 * t->verts[2] + 1];
     dz = pos[3 * t->verts[0] + 2] - pos[3 * t->verts[2] + 2];
@@ -491,6 +495,7 @@ void step1(double *dists) {
     vdiv[t->verts[2]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
     
     // Edges 0-3 and 3-0
+    e = map_vert_to_edge(t->verts[0], t->verts[3]);
     dx = pos[3 * t->verts[0]] - pos[3 * t->verts[3]];
     dy = pos[3 * t->verts[0] + 1] - pos[3 * t->verts[3] + 1];
     dz = pos[3 * t->verts[0] + 2] - pos[3 * t->verts[3] + 2];
@@ -500,6 +505,7 @@ void step1(double *dists) {
     vdiv[t->verts[3]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
 
     // Edges 1-2 and 2-1
+    e = map_vert_to_edge(t->verts[1], t->verts[2]);
     dx = pos[3 * t->verts[1]] - pos[3 * t->verts[2]];
     dy = pos[3 * t->verts[1] + 1] - pos[3 * t->verts[2] + 1];
     dz = pos[3 * t->verts[1] + 2] - pos[3 * t->verts[2] + 2];
@@ -509,6 +515,7 @@ void step1(double *dists) {
     vdiv[t->verts[2]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
 
     // Edges 1-3 and 3-1
+    e = map_vert_to_edge(t->verts[1], t->verts[3]);
     dx = pos[3 * t->verts[1]] - pos[3 * t->verts[3]];
     dy = pos[3 * t->verts[1] + 1] - pos[3 * t->verts[3] + 1];
     dz = pos[3 * t->verts[1] + 2] - pos[3 * t->verts[3] + 2];
@@ -518,6 +525,7 @@ void step1(double *dists) {
     vdiv[t->verts[3]] -= (1 / (12 * t->volume)) * (0.75 * edge_areas[e] / (e_len * e_len)) * e_dot_x;
 
     // Edges 2-3 and 3-2
+    e = map_vert_to_edge(t->verts[2], t->verts[3]);
     dx = pos[3 * t->verts[2]] - pos[3 * t->verts[3]];
     dy = pos[3 * t->verts[2] + 1] - pos[3 * t->verts[3] + 1];
     dz = pos[3 * t->verts[2] + 2] - pos[3 * t->verts[3] + 2];
